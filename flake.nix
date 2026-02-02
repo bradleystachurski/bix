@@ -88,6 +88,7 @@
 
       env = {
         CMAKE_GENERATOR = "Ninja";
+        CMAKE_EXPORT_COMPILE_COMMANDS = "ON";
         LD_LIBRARY_PATH = lib.makeLibraryPath [pkgs.capnproto];
         LOCALE_ARCHIVE = lib.optionalString isLinux "${pkgs.glibcLocales}/lib/locale/locale-archive";
       };
@@ -100,10 +101,28 @@
             pythonEnv
             pkgs.codespell
             pkgs.hexdump
+            pkgs.just
           ]
           ++ platformPkgs isLinux [pkgs.gdb]
           ++ platformPkgs isDarwin [llvmTools.lldb];
-        inherit (env) CMAKE_GENERATOR LD_LIBRARY_PATH LOCALE_ARCHIVE;
+        inherit (env) CMAKE_GENERATOR CMAKE_EXPORT_COMPILE_COMMANDS LD_LIBRARY_PATH LOCALE_ARCHIVE;
+        shellHook = ''
+          alias just='just --justfile ${./justfile} --working-directory .'
+
+          _bix_bin=$(mktemp -d)
+          cat > "$_bix_bin/clangd" <<EOF
+#!/bin/sh
+exec ${llvmTools.clang-tools}/bin/clangd --background-index --clang-tidy "\$@"
+EOF
+          chmod +x "$_bix_bin/clangd"
+          export PATH="$_bix_bin:$PATH"
+
+          if [ -d .git ]; then
+            for pattern in compile_commands.json .cache/ .active-build; do
+              grep -qxF "$pattern" .git/info/exclude 2>/dev/null || echo "$pattern" >> .git/info/exclude
+            done
+          fi
+        '';
       };
 
       formatter = pkgs.alejandra;
